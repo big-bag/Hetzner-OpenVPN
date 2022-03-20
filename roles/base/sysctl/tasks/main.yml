@@ -1,0 +1,6 @@
+---
+- name: configure anti-ddos linux kernel settings
+  ansible.builtin.copy:
+    src: 99-custom.conf
+    dest: /etc/sysctl.d/99-custom.conf
+  notify: apply sysctl settings

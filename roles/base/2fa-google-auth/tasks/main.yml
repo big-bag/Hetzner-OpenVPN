@@ -1,0 +1,53 @@
+---
+- name: add repository to use extra packages for enterprise linux
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+
+- name: install requirements
+  ansible.builtin.dnf:
+    name:
+      - google-authenticator
+      - qrencode
+    state: present
+  vars:
+    mitogen_task_isolation: fork
+
+- name: configure ssh to use the google authenticator pam module
+  ansible.builtin.blockinfile:
+    path: /etc/pam.d/sshd
+    block: |
+      # make ssh use the google authenticator pam module
+      auth       required     pam_google_authenticator.so
+  notify: restart sshd
+
+- name: insert an empty line before the marker line
+  ansible.builtin.replace:
+    path: /etc/pam.d/sshd
+    regexp: '(?<=.\n)# BEGIN ANSIBLE MANAGED BLOCK$'
+    replace: '\n# BEGIN ANSIBLE MANAGED BLOCK'
+  notify: restart sshd
+
+- name: enable challenge-response passwords
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: 'ChallengeResponseAuthentication no'
+    replace: 'ChallengeResponseAuthentication yes'
+  notify: restart sshd
+
+- name: initialize one-time passcodes for user
+  ansible.builtin.command:
+    cmd: >
+      google-authenticator
+        --time-based
+        --qr-mode=none
+        --force
+        --disallow-reuse
+        --minimal-window
+        --rate-limit=3
+        --rate-time=30
+        --emergency-codes=10
+        --quiet
+    creates: $HOME/.google_authenticator
+  become_user: "{{ item.name }}"
+  loop: "{{ users }}"

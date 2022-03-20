@@ -1,0 +1,10 @@
+---
+- name: upgrade all packages
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+  vars:
+    mitogen_task_isolation: fork
+
+- name: continue using a failed target
+  ansible.builtin.meta: clear_host_errors

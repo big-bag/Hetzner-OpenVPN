@@ -1,0 +1,5 @@
+---
+- name: restart crond after changing the timezone, otherwise the jobs may run at the wrong time
+  ansible.builtin.systemd:
+    state: restarted
+    name: crond.service

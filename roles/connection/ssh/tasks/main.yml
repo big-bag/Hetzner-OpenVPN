@@ -1,0 +1,86 @@
+---
+- name: disable login under root
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^PermitRootLogin yes$'
+    replace: 'PermitRootLogin no'
+    backup: yes
+  notify: restart sshd
+
+- name: limit users who can login and disable protocol v1
+  ansible.builtin.blockinfile:
+    path: /etc/ssh/sshd_config
+    block: |
+      AllowUsers {{ users | json_query('[*].name') | join(' ') }}
+      Protocol 2
+  loop: "{{ users }}"
+  notify: restart sshd
+
+- name: insert an empty line before the marker line
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '(?<=.\n)# BEGIN ANSIBLE MANAGED BLOCK$'
+    replace: '\n# BEGIN ANSIBLE MANAGED BLOCK'
+
+- name: configure a non-standard port
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#Port 22$'
+    replace: 'Port {{ vault_ssh_port }}'
+  notify: restart sshd
+
+- name: allow authentication only by private keys (1/2)
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^PasswordAuthentication yes$'
+    replace: 'PasswordAuthentication no'
+  notify: restart sshd
+
+- name: allow authentication only by private keys (2/2)
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#(PubkeyAuthentication yes)$'
+    replace: '\1'
+  notify: restart sshd
+
+- name: configure more detailed logs
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#LogLevel INFO$'
+    replace: 'LogLevel VERBOSE'
+  notify: restart sshd
+
+- name: configure idle timeout interval (1/2)
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#ClientAliveInterval 0$'
+    replace: 'ClientAliveInterval 300'
+  notify: restart sshd
+
+- name: configure idle timeout interval (2/2)
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#ClientAliveCountMax 3$'
+    replace: 'ClientAliveCountMax 0'
+  notify: restart sshd
+
+- name: disable empty passwords
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#(PermitEmptyPasswords no)$'
+    replace: '\1'
+  notify: restart sshd
+
+- name: disable x11 forwarding
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^X11Forwarding yes$'
+    replace: 'X11Forwarding no'
+  notify: restart sshd
+
+- name: set a limit for password attempts
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#MaxAuthTries 6$'
+    replace: 'MaxAuthTries 4'
+  notify: restart sshd

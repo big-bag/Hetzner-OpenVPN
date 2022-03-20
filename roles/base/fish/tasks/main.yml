@@ -1,0 +1,62 @@
+---
+- name: set up the repository
+  ansible.builtin.command:
+    cmd: >
+      dnf config-manager --add-repo
+      https://download.opensuse.org/repositories/shells:fish:release:3/CentOS_8/shells:fish:release:3.repo
+    creates: /etc/yum.repos.d/shells:fish:release:3.repo
+
+- name: install fish
+  ansible.builtin.dnf:
+    name: fish
+    state: present
+  vars:
+    mitogen_task_isolation: fork
+
+- name: change default shell to fish
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    shell: /usr/bin/fish
+  loop: "{{ users }} + [{ 'name': 'root' }]"
+
+- name: set up path for root to use git
+  ansible.builtin.lineinfile:
+    path: /root/.config/fish/config.fish
+    line: set -gx PATH /usr/local/bin $PATH
+    create: yes
+
+- name: clone oh-my-fish repo
+  ansible.builtin.git:
+    repo: https://github.com/oh-my-fish/oh-my-fish.git
+    dest: /usr/local/src/oh-my-fish
+  environment:
+    PATH: /usr/local/bin
+
+- name: install oh-my-fish
+  ansible.builtin.shell:
+    cmd: |
+      PATH=$PATH:/usr/local/bin
+      bin/install --offline --noninteractive
+  args:
+    chdir: /usr/local/src/oh-my-fish
+    creates: $HOME/.config/fish/conf.d/omf.fish
+  become_user: "{{ item.name }}"
+  loop: "{{ users }} + [{ 'name': 'root' }]"
+
+- name: set up agnoster theme
+  ansible.builtin.shell:
+    cmd: |
+      set PATH $PATH /usr/local/bin
+      omf install agnoster
+  args:
+    executable: /usr/bin/fish
+    creates: $HOME/.local/share/omf/themes/agnoster/
+  become_user: "{{ item.name }}"
+  loop: "{{ users }} + [{ 'name': 'root' }]"
+
+- name: hide hostname
+  ansible.builtin.lineinfile:
+    path: /home/{{ item.name }}/.config/fish/config.fish
+    line: set -g theme_hide_hostname yes
+    create: yes
+  loop: "{{ users }}"

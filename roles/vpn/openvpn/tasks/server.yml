@@ -1,0 +1,182 @@
+---
+- name: install packages
+  ansible.builtin.dnf:
+    name: openvpn
+
+- name: download easy-rsa sources
+  ansible.builtin.git:
+    repo: https://github.com/OpenVPN/easy-rsa.git
+    dest: /usr/local/src/easy-rsa-{{ item.name }}
+  loop: "{{ openvpn_groups }}"
+  environment:
+    PATH: /usr/local/bin
+
+- name: create easy-rsa vars
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars.example
+    dest: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    remote_src: yes
+    force: no
+  loop: "{{ openvpn_groups }}"
+
+- name: set easy-rsa parameters (1/6)
+  ansible.builtin.replace:
+    path: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    regexp: '^#(set_var\sEASYRSA_DN\s+"cn_only")'
+    replace: '\1'
+  loop: "{{ openvpn_groups }}"
+
+- name: set easy-rsa parameters (2/6)
+  ansible.builtin.replace:
+    path: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    regexp: '^#set_var\sEASYRSA_ALGO\s+rsa$'
+    replace: 'set_var EASYRSA_ALGO            {{ item.easyrsa_algo }}'
+  loop: "{{ openvpn_groups }}"
+
+- name: set easy-rsa parameters (3/6)
+  ansible.builtin.replace:
+    path: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    regexp: '^#set_var\sEASYRSA_CURVE\s+secp384r1$'
+    replace: 'set_var EASYRSA_CURVE           {{ item.curve }}'
+  loop: "{{ openvpn_groups }}"
+
+- name: set easy-rsa parameters (4/6)
+  ansible.builtin.replace:
+    path: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    regexp: '^#(set_var\sEASYRSA_CA_EXPIRE\s+3650)$'
+    replace: '\1'
+  loop: "{{ openvpn_groups }}"
+
+- name: set easy-rsa parameters (5/6)
+  ansible.builtin.replace:
+    path: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    regexp: '^#set_var\sEASYRSA_CERT_EXPIRE\s+825$'
+    replace: 'set_var EASYRSA_CERT_EXPIRE     3650'
+  loop: "{{ openvpn_groups }}"
+
+- name: set easy-rsa parameters (6/6)
+  ansible.builtin.replace:
+    path: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars
+    regexp: '^#set_var\sEASYRSA_CRL_DAYS\s+180$'
+    replace: 'set_var EASYRSA_CRL_DAYS        3650'
+  loop: "{{ openvpn_groups }}"
+
+- name: init pki
+  ansible.builtin.command: ./easyrsa init-pki
+  args:
+    chdir: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3
+    creates: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/pki/
+  environment:
+    EASYRSA_VARS_FILE: '/usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars'
+  loop: "{{ openvpn_groups }}"
+
+- name: build ca
+  ansible.builtin.command: ./easyrsa --batch build-ca nopass
+  args:
+    chdir: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3
+    creates: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/pki/ca.crt
+  environment:
+    EASYRSA_VARS_FILE: '/usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars'
+  loop: "{{ openvpn_groups }}"
+
+- name: build server full
+  ansible.builtin.command: ./easyrsa build-server-full {{ item.name }} nopass
+  args:
+    chdir: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3
+    creates: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/pki/issued/{{ item.name }}.crt
+  environment:
+    EASYRSA_VARS_FILE: '/usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/vars'
+  loop: "{{ openvpn_groups }}"
+
+- name: create server directory
+  ansible.builtin.file:
+    path: /etc/openvpn/server/{{ item.name }}
+    state: directory
+  loop: "{{ openvpn_groups }}"
+
+- name: copy certificate authority
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/pki/ca.crt
+    dest: /etc/openvpn/server/{{ item.name }}/
+    remote_src: yes
+  loop: "{{ openvpn_groups }}"
+
+- name: copy key
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/pki/private/{{ item.name }}.key
+    dest: /etc/openvpn/server/{{ item.name }}/
+    mode: '0600'
+    remote_src: yes
+  loop: "{{ openvpn_groups }}"
+
+- name: copy certificate
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.name }}/easyrsa3/pki/issued/{{ item.name }}.crt
+    dest: /etc/openvpn/server/{{ item.name }}/
+    remote_src: yes
+  loop: "{{ openvpn_groups }}"
+
+- name: generate hmac key
+  ansible.builtin.command: openvpn --genkey --secret ta.key
+  args:
+    chdir: /etc/openvpn/server/{{ item.name }}
+    creates: /etc/openvpn/server/{{ item.name }}/ta.key
+  loop: "{{ openvpn_groups }}"
+
+- name: generate diffie-hellman parameters
+  community.crypto.openssl_dhparam:
+    path: /etc/openvpn/server/dh.pem
+  notify: restart openvpn
+
+- name: create ccd directory
+  ansible.builtin.file:
+    path: /etc/openvpn/server/ccd
+    state: directory
+
+# fix error "AUTH-PAM: BACKGROUND: user '<user>' failed to authenticate: System error"
+- name: enable pam auth
+  ansible.builtin.replace:
+    dest: /usr/lib/systemd/system/openvpn-server@.service
+    regexp: '^(CapabilityBoundingSet(?!.*\bCAP_AUDIT_WRITE\b).*)$'
+    replace: '\1 CAP_AUDIT_WRITE'
+    backup: yes
+
+# fix error "openvpn_execve: unable to fork: Resource temporarily unavailable (errno=11)"
+- name: enable service fork
+  ansible.builtin.replace:
+    path: /usr/lib/systemd/system/openvpn-server@.service
+    regexp: '^(LimitNPROC=10)'
+    replace: '# \1'
+    backup: yes
+
+# fix error "Could not access file 'ccd/[...]': Permission denied (errno=13)"
+# comment: access to "ccd" directory needs to assign static IP-addresses to clients;
+# permissions must be o=r+x for both "/etc/openvpn/server" and "/etc/openvpn/server/ccd" to allow read by "nobody"
+- name: enable access to ccd directory
+  ansible.builtin.file:
+    path: /etc/openvpn/server
+    state: directory
+    mode: '0755'
+
+- name: force systemd to reread configs
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: create directory for logs
+  ansible.builtin.file:
+    path: /var/log/openvpn
+    state: directory
+
+- name: create server config
+  ansible.builtin.template:
+    src: "{{ item.name }}.conf.j2"
+    dest: /etc/openvpn/server/{{ item.name }}.conf
+  loop: "{{ openvpn_groups }}"
+  notify: restart openvpn
+
+- name: start the openvpn daemon and enable it to start at boot
+  ansible.builtin.service:
+    name: "openvpn-server@{{ item.name }}"
+    state: started
+    enabled: yes
+  loop: "{{ openvpn_groups }}"

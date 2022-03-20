@@ -1,0 +1,71 @@
+---
+- name: check installed version
+  ansible.builtin.command:
+    cmd: /usr/local/bin/git --version
+  register: installed_version
+  failed_when: false
+  changed_when: false
+
+# if git isn't installed, then set the version to zero; otherwise, set the current installed version
+- name: set installed version
+  ansible.builtin.set_fact:
+    installed_version: "{% if installed_version.rc == 2 %}0{% else %}{{ installed_version.stdout[12:] }}{% endif %}"
+
+- name: check latest version
+  ansible.builtin.shell:
+    cmd: curl --silent -u {{ vault_github_username }}:{{ vault_github_password }} https://api.github.com/repos/git/git/tags | jq '[.[] | select(.name | contains("-rc") | not)][0] | .name'
+  register: latest_version
+  delegate_to: localhost
+  changed_when: false
+  become: no
+  run_once: true
+
+- name: set latest version
+  ansible.builtin.set_fact:
+    latest_version: "{{ latest_version.stdout[2:][:-1] }}"
+  run_once: true
+
+- name: build git
+  block:
+    - name: install the software that git depends on
+      ansible.builtin.dnf:
+        name:
+          - gettext-devel
+          - openssl-devel
+          - perl-CPAN
+          - perl-devel
+          - zlib-devel
+          - gcc
+          - autoconf
+          - libcurl-devel
+          - expat-devel
+        state: present
+      vars:
+        mitogen_task_isolation: fork
+
+    - name: install the software that unarchive module depends on
+      ansible.builtin.dnf:
+        name: tar
+        state: present
+      vars:
+        mitogen_task_isolation: fork
+
+    - name: download git tarball
+      ansible.builtin.unarchive:
+        src: https://mirrors.edge.kernel.org/pub/software/scm/git/git-{{ latest_version }}.tar.gz
+        dest: /usr/local/src/
+        remote_src: yes
+
+    - name: declare the appropriate destination for the binary and compile the source code into a working program
+      ansible.builtin.command:
+        cmd: make prefix=/usr/local all
+      args:
+        chdir: /usr/local/src/git-{{ latest_version }}/
+        creates: /usr/local/src/git-{{ latest_version }}/git
+
+    - name: install git
+      ansible.builtin.command:
+        cmd: make prefix=/usr/local install
+      args:
+        chdir: /usr/local/src/git-{{ latest_version }}/
+  when: "'{{ latest_version }}' != '{{ installed_version }}'"

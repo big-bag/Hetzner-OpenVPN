@@ -1,0 +1,14 @@
+---
+- name: disable sudo with password
+  ansible.builtin.replace:
+    path: /etc/sudoers
+    regexp: '^(%wheel\s+ALL=\(ALL\)\s+ALL)$'
+    replace: '# \1'
+    backup: yes
+
+- name: enable sudo without password
+  ansible.builtin.replace:
+    path: /etc/sudoers
+    regexp: '^#\s+(%wheel\s+ALL=\(ALL\)\s+NOPASSWD:\s+ALL)'
+    replace: '\1'
+    validate: '/usr/sbin/visudo -cf %s'

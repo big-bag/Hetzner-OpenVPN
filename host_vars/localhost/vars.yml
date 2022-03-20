@@ -1,0 +1,41 @@
+---
+network: 10.0.0.0/16
+subnetwork: 10.0.0.0/24
+
+servers:
+  - name: openvpn-hel1-htz-1
+    type: cx11
+    image: centos-stream-8
+    ip: 10.0.0.2
+
+users:
+  - name:    "{{ vault_name }}"
+    comment: "{{ vault_comment }}"
+
+openvpn_groups:
+  # ------------------- routers group ------------------- #
+  - name: router
+    easyrsa_algo: rsa
+    curve: secp521r1
+    tun_interface: tun0
+    network: 192.168.10.0
+    devices:
+      - name: router_01
+        password: "{{ vault_password_router_01 }}"
+        ip_server: 192.168.10.1
+        ip_client: 192.168.10.2
+  # ------------------- openvpn udp clients group ------------------- #
+  - name: client
+    easyrsa_algo: ec
+    curve: secp521r1
+    tun_interface: tun1
+    network: 192.168.20.0
+    devices:
+      - name: client_01
+        password: "{{ vault_password_client_01 }}"
+        ip_server: 192.168.20.1
+        ip_client: 192.168.20.2
+      - name: client_02
+        password: "{{ vault_password_client_02 }}"
+        ip_server: 192.168.20.5
+        ip_client: 192.168.20.6

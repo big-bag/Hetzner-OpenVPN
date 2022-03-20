@@ -1,0 +1,52 @@
+---
+- name: collect facts
+  ansible.builtin.setup:
+
+- name: remove the nftables package
+  ansible.builtin.dnf:
+    name: nftables
+    state: absent
+
+- name: install services for iptables
+  ansible.builtin.dnf:
+    name: iptables-services
+    state: present
+  register: install_iptables_services
+
+- name: allow custom ssh port in default rules to access server in current session
+  ansible.builtin.replace:
+    path: /etc/sysconfig/iptables
+    regexp: '(.*\s+)22(\s+.*)?$'
+    replace: '\1"{{ vault_ssh_port }}"\2'
+    backup: yes
+  when: install_iptables_services.changed
+
+# the iptables service starts before copying the rules, because the rules for ssh only allow new connections (--ctstate NEW,ESTABLISHED)
+# if the iptables service will start with these rules, the connection to the server(-s) will be interrupted and the playbook will not be played to the end
+- name: start and enable service iptables/ip6tables
+  ansible.builtin.systemd:
+    name: "{{ item }}.service"
+    state: started
+    enabled: yes
+  loop:
+    - iptables
+    - ip6tables
+
+- name: create script which disables firewall
+  ansible.builtin.copy:
+    src: fw.stop
+    dest: /opt/fw.stop
+    mode: '0755'
+
+- name: set variables for openvpn client's interface and network
+  ansible.builtin.set_fact:
+    tun_interface_client: "{{ openvpn_groups.1.tun_interface }}"
+    network_client: "{{ openvpn_groups.1.network }}"
+
+- name: create firewall rules
+  ansible.builtin.template:
+    src: "{{ item.0 }}.j2"
+    dest: "/etc/sysconfig/{{ item.0 }}"
+  notify: "restart {{ item.0 }}"
+  when: "'{{ item.1.name }}' in inventory_hostname"
+  loop: "{{ ['iptables', 'ip6tables']|product(servers)|list }}"

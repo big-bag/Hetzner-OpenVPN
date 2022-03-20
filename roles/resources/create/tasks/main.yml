@@ -1,0 +1,90 @@
+---
+# ------------------- ssh keys ------------------- #
+- name: generate an openssh keypair
+  community.crypto.openssh_keypair:
+    path: id_rsa
+
+# ------------------- server ------------------- #
+- name: create a ssh key
+  hetzner.hcloud.hcloud_ssh_key:
+    api_token: "{{ vault_hcloud_token }}"
+    name: "{{ users | json_query('[*].name') | first }}"
+    public_key: "{{ lookup('file', '{{ playbook_dir }}/id_rsa.pub') }}"
+
+- name: create a network
+  hetzner.hcloud.hcloud_network:
+    api_token: "{{ vault_hcloud_token }}"
+    name: network-1
+    ip_range: "{{ network }}"
+
+- name: create a subnetwork
+  hetzner.hcloud.hcloud_subnetwork:
+    api_token: "{{ vault_hcloud_token }}"
+    network: network-1
+    ip_range: "{{ subnetwork }}"
+    network_zone: eu-central
+    type: cloud
+
+- name: create a server with ssh key
+  hetzner.hcloud.hcloud_server:
+    api_token: "{{ vault_hcloud_token }}"
+    name: "{{ item.name }}"
+    server_type: "{{ item.type }}"
+    image: "{{ item.image }}"
+    location: hel1
+    ssh_keys: [ "{{ users | json_query('[*].name') | first }}" ]
+  loop: "{{ servers }}"
+  register: server
+
+- name: create a server network and specify the ip address
+  hetzner.hcloud.hcloud_server_network:
+    api_token: "{{ vault_hcloud_token }}"
+    network: network-1
+    server: "{{ item.name }}"
+    ip: "{{ item.ip }}"
+  loop: "{{ servers }}"
+
+# ------------------- cloudflare ------------------- #
+- name: gather hcloud server infos
+  hetzner.hcloud.hcloud_server_info:
+    api_token: "{{ vault_hcloud_token }}"
+  register: output
+
+- name: gather hcloud server ipv4 address
+  ansible.builtin.set_fact:
+    server_ipv4: "{{ output['hcloud_server_info'][0]['ipv4_address'] }}"
+
+- name: create a record on cloudflare to point to hcloud server
+  community.general.cloudflare_dns:
+    api_token: "{{ vault_cloudflare_api_token }}"
+    zone: "{{ vault_domain }}"
+    record: openvpn
+    type: A
+    value: "{{ server_ipv4 }}"
+
+# ------------------- folders and files ------------------- #
+- name: create folders for inventory and group variables
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - inventory
+    - group_vars/hcloud
+
+- name: create a hetzner cloud dynamic inventory file
+  ansible.builtin.blockinfile:
+    path: inventory/hcloud.yml
+    block: |
+      ---
+      plugin: hcloud
+      token: {{ vault_hcloud_token }}
+    create: yes
+
+- name: create a symbolic links from host vars to group vars
+  ansible.builtin.file:
+    src: "{{ playbook_dir }}/host_vars/localhost/{{ item }}.yml"
+    dest: "{{ playbook_dir }}/group_vars/hcloud/{{ item }}.yml"
+    state: link
+  loop:
+    - vars
+    - vault

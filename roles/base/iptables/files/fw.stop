@@ -1,0 +1,28 @@
+#!/bin/bash
+
+echo "Stopping firewall and allowing all traffic"
+
+IPT="/usr/sbin/iptables"
+IP6T="/usr/sbin/ip6tables"
+
+# Flush old rules, old custom tables
+$IPT -P INPUT ACCEPT
+$IPT -P FORWARD ACCEPT
+$IPT -P OUTPUT ACCEPT
+$IPT -F
+$IPT -X
+$IPT -t nat -F
+$IPT -t nat -X
+$IPT -t mangle -F
+$IPT -t mangle -X
+
+# Flush old rules, old custom tables
+$IP6T -P INPUT ACCEPT
+$IP6T -P FORWARD ACCEPT
+$IP6T -P OUTPUT ACCEPT
+$IP6T -F
+$IP6T -X
+$IP6T -t nat -F
+$IP6T -t nat -X
+$IP6T -t mangle -F
+$IP6T -t mangle -X

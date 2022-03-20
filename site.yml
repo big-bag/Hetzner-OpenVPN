@@ -1,0 +1,76 @@
+---
+- name: play to create resources such as a ssh key and servers
+  hosts: localhost
+  connection: local
+  become: no
+  gather_facts: no
+  roles:
+    - { role: resources/create }
+    - { role: resources/destroy, tags: [ "never", "destroy" ] }
+  post_tasks:
+    - name: refresh inventory to ensure instances exist in (or removed from) inventory
+      ansible.builtin.meta: refresh_inventory
+
+- name: play to configure connection parameters such as create users and configure ssh; depends on the previous play
+  hosts: hcloud
+  ignore_unreachable: yes
+  remote_user: "{% if hostvars['localhost']['server'].changed %}root{% else %}{{ users | json_query('[*].name') | first }}{% endif %}"
+  vars:
+    ansible_ssh_private_key_file: id_rsa
+    ansible_port: "{% if hostvars['localhost']['server'].changed %}22{% else %}{{ vault_ssh_port }}{% endif %}"
+    ansible_python_interpreter: /usr/bin/python3
+  become: yes
+  gather_facts: no
+  pre_tasks:
+    - name: wait 40 seconds for target connection to become reachable/usable
+      ansible.builtin.wait_for_connection:
+        timeout: 40
+  roles:
+    - connection/users
+    - connection/sudo
+    - connection/ssh
+  post_tasks:
+    - name: bring host(-s) back to play after failure (e.g., if one host was unreachable)
+      ansible.builtin.meta: clear_host_errors
+
+- name: play to configure iptables
+  hosts: hcloud
+  remote_user: "{{ users | json_query('[*].name') | first }}"
+  vars:
+    ansible_ssh_private_key_file: id_rsa
+    ansible_port: "{{ vault_ssh_port }}"
+  become: yes
+  gather_facts: no
+  strategy: linear
+  roles:
+    - base/iptables
+
+- name: play to configure server security and basic configuration settings
+  hosts: hcloud
+  remote_user: "{{ users | json_query('[*].name') | first }}"
+  vars:
+    ansible_ssh_private_key_file: id_rsa
+    ansible_port: "{{ vault_ssh_port }}"
+    ansible_python_interpreter: /usr/bin/python3
+  become: yes
+  gather_facts: no
+  roles:
+    - base/2fa-google-auth
+    - base/2fa-1password
+    - base/sysctl
+    - base/timezone
+    - base/ntp
+    - base/git
+    - base/fish
+    - base/upgrade
+
+- name: play to deploy openpvn
+  hosts: hcloud
+  remote_user: "{{ users | json_query('[*].name') | first }}"
+  vars:
+    ansible_ssh_private_key_file: id_rsa
+    ansible_port: "{{ vault_ssh_port }}"
+  become: yes
+  gather_facts: yes
+  roles:
+    - vpn/openvpn

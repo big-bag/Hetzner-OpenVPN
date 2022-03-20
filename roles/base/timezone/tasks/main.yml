@@ -1,0 +1,5 @@
+---
+- name: set timezone to europe/moscow
+  community.general.timezone:
+    name: Europe/Moscow
+  notify: restart crond after changing the timezone, otherwise the jobs may run at the wrong time

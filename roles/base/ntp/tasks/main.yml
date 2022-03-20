@@ -1,0 +1,23 @@
+---
+- name: disable default ntp pool
+  ansible.builtin.replace:
+    path: /etc/chrony.conf
+    regexp: '^(pool 2\.centos\.pool\.ntp\.org iburst)$'
+    replace: '#\1'
+    backup: yes
+
+- name: insert finland pool zone
+  ansible.builtin.blockinfile:
+    path: /etc/chrony.conf
+    insertafter: '^#pool 2\.centos\.pool\.ntp\.org iburst$'
+    block: |
+      {% for index in range(0, 3 +1) %}
+      server {{ index }}.fi.pool.ntp.org
+      {% endfor %}
+  notify: restart chronyd
+
+- name: insert an empty line before the marker line
+  ansible.builtin.replace:
+    path: /etc/chrony.conf
+    regexp: '(?<=.\n)# BEGIN ANSIBLE MANAGED BLOCK$'
+    replace: '\n# BEGIN ANSIBLE MANAGED BLOCK'

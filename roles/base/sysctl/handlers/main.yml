@@ -1,0 +1,7 @@
+---
+- name: apply sysctl settings
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -p
+      - /etc/sysctl.d/99-custom.conf

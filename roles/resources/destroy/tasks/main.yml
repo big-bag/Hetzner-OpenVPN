@@ -1,0 +1,88 @@
+---
+# ------------------- 1password ------------------- #
+- name: delete item(-s) in 1password
+  block:
+    - name: sign in to a 1password account
+      ansible.builtin.shell:
+        cmd: |
+          export OP_DEVICE="{{ vault_1password_device_id }}"
+          echo "{{ vault_1password_master_password }}" | op signin "{{ vault_1password_subdomain }}.1password.com" "{{ vault_1password_email_address }}" "{{ vault_1password_secret_key }}" --raw
+      register: op_session_token
+      changed_when: false
+
+    - name: delete item(-s)
+      ansible.builtin.shell:
+        cmd: |
+          export "OP_SESSION_{{ vault_1password_subdomain }}"="{{ op_session_token.stdout }}"
+          op delete item "{{ item.name }}" --vault "{{ vault_1password_vault_name }}"
+      loop: "{{ servers }}"
+      failed_when: false
+      changed_when: false
+
+    - name: sign out from a 1password account (1/2)
+      ansible.builtin.shell:
+        cmd: op signout --forget
+      changed_when: false
+
+    - name: sign out from a 1password account (2/2)
+      ansible.builtin.file:
+        path: $HOME/.config/op/config
+        state: absent
+      changed_when: false
+  run_once: true
+
+# ------------------- folders ------------------- #
+- name: delete folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - group_vars
+    - inventory
+
+# ------------------- cloudflare ------------------- #
+- name: gather hcloud server infos
+  hetzner.hcloud.hcloud_server_info:
+    api_token: "{{ vault_hcloud_token }}"
+  register: output
+
+- name: gather hcloud server ipv4 address
+  ansible.builtin.set_fact:
+    server_ipv4: "{{ output['hcloud_server_info'][0]['ipv4_address'] }}"
+  when: output.hcloud_server_info | length > 0
+
+- name: delete a record on cloudflare which points to hcloud server
+  community.general.cloudflare_dns:
+    api_token: "{{ vault_cloudflare_api_token }}"
+    zone: "{{ vault_domain }}"
+    record: openvpn
+    type: A
+    value: "{{ server_ipv4 }}"
+    state: absent
+  when: server_ipv4 is defined
+
+# ------------------- server ------------------- #
+- name: delete a server
+  hetzner.hcloud.hcloud_server:
+    api_token: "{{ vault_hcloud_token }}"
+    name: "{{ item.name }}"
+    state: absent
+  loop: "{{ servers }}"
+
+- name: delete a network
+  hetzner.hcloud.hcloud_network:
+    api_token: "{{ vault_hcloud_token }}"
+    name: network-1
+    state: absent
+
+- name: delete a ssh_key
+  hetzner.hcloud.hcloud_ssh_key:
+    api_token: "{{ vault_hcloud_token }}"
+    name: "{{ users | json_query('[*].name') | first }}"
+    state: absent
+
+# ------------------- ssh keys ------------------- #
+- name: delete an openssh keypair
+  community.crypto.openssh_keypair:
+    path: id_rsa
+    state: absent

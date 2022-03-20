@@ -1,0 +1,187 @@
+{
+  "notesPlain": "",
+  "passwordHistory": [],
+  "sections": [
+    {
+      "fields": [
+        {
+          "k": "string",
+          "n": "url",
+          "t": "URL",
+          "v": ""
+        },
+        {
+          "k": "string",
+          "n": "username",
+          "t": "username",
+          "v": ""
+        },
+        {
+          "k": "concealed",
+          "n": "password",
+          "t": "password",
+          "v": ""
+        }
+      ],
+      "name": "",
+      "title": ""
+    },
+    {
+      "fields": [
+        {
+          "k": "string",
+          "n": "admin_console_url",
+          "t": "admin console URL",
+          "v": ""
+        },
+        {
+          "k": "string",
+          "n": "admin_console_username",
+          "t": "admin console username",
+          "v": ""
+        },
+        {
+          "k": "concealed",
+          "n": "admin_console_password",
+          "t": "console password",
+          "v": ""
+        }
+      ],
+      "name": "admin_console",
+      "title": "Admin Console"
+    },
+    {
+      "fields": [
+        {
+          "k": "string",
+          "n": "name",
+          "t": "name",
+          "v": "{{ hostvars[item]['ansible_facts']['system_vendor'] }}"
+        },
+        {
+          "k": "string",
+          "n": "website",
+          "t": "website",
+          "v": ""
+        },
+        {
+          "k": "string",
+          "n": "support_contact_url",
+          "t": "support URL",
+          "v": ""
+        },
+        {
+          "k": "string",
+          "n": "support_contact_phone",
+          "t": "support phone",
+          "v": ""
+        }
+      ],
+      "name": "hosting_provider_details",
+      "title": "Hosting Provider"
+    },
+    {
+      "fields": [
+        {
+          "k": "string",
+          "n": "ip_address",
+          "t": "ip-address",
+          "v": "{{ hostvars[item]['ansible_default_ipv4']['address'] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "ssh_port",
+          "t": "ssh-port",
+          "v": "{{ vault_ssh_port }}"
+        }
+      ],
+      "name": "connection_info_details",
+      "title": "Connection Info"
+    },
+{% for user_index in range(0, ((users|length)-1) +1) %}
+    {
+      "fields": [
+        {
+          "k": "concealed",
+          "n": "connection_command",
+          "t": "connection command",
+          "v": "ssh {{ hostvars[item].two_fa_codes['results'][user_index]['item']['name'] }}@{{ hostvars[item]['ansible_default_ipv4']['address'] }} -p {{ vault_ssh_port }} -i id_rsa"
+        },
+        {
+          "k": "concealed",
+          "n": "TOTP_{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "one-time password",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][0] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 01",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][5] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 02",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][6] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 03",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][7] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 04",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][8] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 05",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][9] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 06",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][10] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 07",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][11] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 08",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][12] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 09",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][13] }}"
+        },
+        {
+          "k": "concealed",
+          "n": "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+          "t": "emergency scratch code 10",
+          "v": "{{ hostvars[item].two_fa_codes['results'][user_index]['stdout_lines'][14] }}"
+        }
+      ],
+      "name": "user_{{ hostvars[item].two_fa_codes['results'][user_index]['item']['name'] }}_details",
+      "title": "user details - {{ hostvars[item].two_fa_codes['results'][user_index]['item']['name'] }}"
+    },
+{% endfor %}
+    {
+      "fields": [],
+      "name": "Section_{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=26') }}",
+      "title": ""
+    }
+  ]
+}

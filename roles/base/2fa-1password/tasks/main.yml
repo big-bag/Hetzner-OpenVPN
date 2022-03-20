@@ -1,0 +1,130 @@
+---
+- name: collect facts
+  ansible.builtin.setup:
+
+- name: read created file to configure secret key as one-time password and save emergency scratch codes
+  ansible.builtin.command:
+    cmd: cat /home/{{ item.name }}/.google_authenticator
+  loop: "{{ users }}"
+  register: two_fa_codes
+  changed_when: false
+
+- name: sign in to an account
+  ansible.builtin.shell:
+    cmd: |
+      export OP_DEVICE="{{ vault_1password_device_id }}"
+      echo "{{ vault_1password_master_password }}" | op signin "{{ vault_1password_subdomain }}.1password.com" "{{ vault_1password_email_address }}" "{{ vault_1password_secret_key }}" --raw
+  register: op_session_token
+  delegate_to: localhost
+  changed_when: false
+  become: no
+  run_once: true
+
+- name: check that vault created
+  ansible.builtin.shell:
+    cmd: |
+      export "OP_SESSION_{{ vault_1password_subdomain }}"="{{ op_session_token.stdout }}"
+      op get vault "{{ vault_1password_vault_name }}"
+  register: vault_created
+  delegate_to: localhost
+  failed_when: false
+  changed_when: false
+  become: no
+  run_once: true
+
+- name: create vault
+  ansible.builtin.shell:
+    cmd: |
+      export "OP_SESSION_{{ vault_1password_subdomain }}"="{{ op_session_token.stdout }}"
+      op create vault "{{ vault_1password_vault_name }}"
+  delegate_to: localhost
+  become: no
+  run_once: true
+  when: vault_created.rc != 0
+
+- name: check that item(-s) and user section(-s) created
+  community.general.onepassword_info:
+    auto_login:
+      master_password: "{{ vault_1password_master_password }}"
+      subdomain: "{{ vault_1password_subdomain }}"
+      username: "{{ vault_1password_email_address }}"
+      secret_key: "{{ vault_1password_secret_key }}"
+    search_terms:
+      - vault: "{{ vault_1password_vault_name }}"
+        name: "{{ item.0.name }}"
+        section: user details - {{ item.1.name }}
+  environment:
+    OP_DEVICE: "{{ vault_1password_device_id }}"
+  loop: "{{ servers|product(users)|list }}"
+  register: item_or_section_created
+  delegate_to: localhost
+  failed_when: false
+  become: no
+  run_once: true
+
+- name: create a local temporary folder
+  ansible.builtin.file:
+    path: "/tmp/ansible.{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=8') }}"
+    state: directory
+  when: '"Unexpected error attempting to find an item in 1Password" in item_or_section_created.results.{{ item }}.msg'
+  loop: "{{ range(0, ((servers|length)*(users|length)-1) +1) | list }}"
+  register: tempdir
+  delegate_to: localhost
+  become: no
+  run_once: true
+
+- name: (re-)create item(-s) in vault
+  block:
+    - name: delete item(-s)
+      ansible.builtin.shell:
+        cmd: |
+          export "OP_SESSION_{{ vault_1password_subdomain }}"="{{ op_session_token.stdout }}"
+          op delete item "{{ item.name }}" --vault "{{ vault_1password_vault_name }}"
+      loop: "{{ servers }}"
+      failed_when: false
+
+    - name: render config
+      ansible.builtin.template:
+        src: server.json.j2
+        dest: "{{ tempdir['results'] | json_query('[*].path') | first }}/{{ item }}-server.json"
+      loop: "{{ groups['hcloud'] }}"
+
+    - name: create an item with a template in vault
+      ansible.builtin.shell:
+        cmd: |
+          export "OP_SESSION_{{ vault_1password_subdomain }}"="{{ op_session_token.stdout }}"
+          op create item "Server" --title "{{ item.name }}" "$( op encode < {{ tempdir['results'] | json_query('[*].path') | first }}/{{ item.name }}-server.json )" --vault "{{ vault_1password_vault_name }}"
+          sleep 2
+      loop: "{{ servers }}"
+  delegate_to: localhost
+  become: no
+  run_once: true
+  when: tempdir.changed
+
+- name: delete a local temporary folder
+  ansible.builtin.file:
+    path: "{{ tempdir['results'][item]['path'] }}"
+    state: absent
+  when: "{{ tempdir['results'][item]['path'] is defined }}"
+  loop: "{{ range(0, ((servers|length)*(users|length)-1) +1) | list }}"
+  delegate_to: localhost
+  changed_when: false
+  become: no
+  run_once: true
+
+- name: sign out from an account (1/2)
+  ansible.builtin.shell:
+    cmd: op signout --forget
+  delegate_to: localhost
+  changed_when: false
+  become: no
+  run_once: true
+
+- name: sign out from an account (2/2)
+  ansible.builtin.file:
+    path: $HOME/.config/op/config
+    state: absent
+  delegate_to: localhost
+  changed_when: false
+  become: no
+  run_once: true

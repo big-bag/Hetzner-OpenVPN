@@ -1,0 +1,5 @@
+---
+- name: restart chronyd
+  ansible.builtin.systemd:
+    state: restarted
+    name: chronyd.service

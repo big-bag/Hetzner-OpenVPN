@@ -1,0 +1,159 @@
+---
+- name: build client full
+  ansible.builtin.command: ./easyrsa build-client-full {{ item.1.name }} nopass
+  args:
+    chdir: /usr/local/src/easy-rsa-{{ item.0.name }}/easyrsa3
+    creates: /usr/local/src/easy-rsa-{{ item.0.name }}/easyrsa3/pki/issued/{{ item.1.name }}.crt
+  environment:
+    EASYRSA_VARS_FILE: '/usr/local/src/easy-rsa-{{ item.0.name }}/easyrsa3/vars'
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+- name: create client directory
+  ansible.builtin.file:
+    path: /etc/openvpn/client/{{ item.1.name }}
+    state: directory
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+- name: copy certificate authority
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.0.name }}/easyrsa3/pki/ca.crt
+    dest: /etc/openvpn/client/{{ item.1.name }}/ca.crt
+    remote_src: yes
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+- name: copy key
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.0.name }}/easyrsa3/pki/private/{{ item.1.name }}.key
+    dest: /etc/openvpn/client/{{ item.1.name }}/{{ item.1.name }}.key
+    remote_src: yes
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+- name: copy certificate
+  ansible.builtin.copy:
+    src: /usr/local/src/easy-rsa-{{ item.0.name }}/easyrsa3/pki/issued/{{ item.1.name }}.crt
+    dest: /etc/openvpn/client/{{ item.1.name }}/{{ item.1.name }}.crt
+    remote_src: yes
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  changed_when: false
+
+- name: delete service information from certificate
+  ansible.builtin.command: "sed -i -n -e '/-----BEGIN/,/-----END/ p' /etc/openvpn/client/{{ item.1.name }}/{{ item.1.name }}.crt"
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  changed_when: false
+
+- name: copy HMAC key
+  ansible.builtin.copy:
+    src: /etc/openvpn/server/{{ item.0.name }}/ta.key
+    dest: /etc/openvpn/client/{{ item.1.name }}/ta.key
+    remote_src: yes
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+# devices is vars must be unique, otherwise new user will override previous user with the same name
+- name: create system user for pam authentication
+  ansible.builtin.user:
+    name: "{{ item.1.name }}"
+    system: yes
+    shell: /bin/false
+    create_home: no
+    password: "{{ item.1.password | password_hash('sha512') }}"
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  changed_when: false
+
+- name: create local temporary directory
+  ansible.builtin.tempfile:
+    state: directory
+  register: tempdir
+  delegate_to: '127.0.0.1'
+  become: no
+  changed_when: false
+
+- name: copy certificates and keys to local temporary directory
+  ansible.posix.synchronize:
+    mode: pull
+    src: /etc/openvpn/client/
+    dest: "{{ tempdir.path }}"
+    private_key: /etc/ansible/id_rsa
+  changed_when: false
+
+- name: create config for linux in local temporary directory
+  ansible.builtin.template:
+    src: "{{ item.0.name }}.ovpn.j2"
+    dest: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_lin.ovpn"
+  vars:
+    ca: "{{ lookup('file', '{{ tempdir.path }}/{{ item.1.name }}/ca.crt') }}"
+    cert: "{{ lookup('file', '{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}.crt') }}"
+    key: "{{ lookup('file', '{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}.key') }}"
+    ta: "{{ lookup('file', '{{ tempdir.path }}/{{ item.1.name }}/ta.key') }}"
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  delegate_to: '127.0.0.1'
+
+- name: create config for windows in local temporary directory
+  ansible.builtin.copy:
+    src: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_lin.ovpn"
+    dest: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_win.ovpn"
+    remote_src: yes
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  delegate_to: '127.0.0.1'
+  changed_when: false
+
+- name: disable user in config for windows
+  ansible.builtin.replace:
+    path: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_win.ovpn"
+    regexp: '^(user\snobody)$'
+    replace: ';\1'
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  delegate_to: '127.0.0.1'
+  changed_when: false
+
+- name: disable group in config for windows
+  ansible.builtin.replace:
+    path: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_win.ovpn"
+    regexp: '^(group\snobody)$'
+    replace: ';\1'
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+  delegate_to: '127.0.0.1'
+  changed_when: false
+
+- name: upload config for linux from temporary directory to remote server
+  ansible.builtin.copy:
+    src: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_lin.ovpn"
+    dest: /etc/openvpn/client/{{ item.1.name }}/{{ item.1.name }}_lin.ovpn
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+- name: upload config for windows from temporary directory to remote server
+  ansible.builtin.copy:
+    src: "{{ tempdir.path }}/{{ item.1.name }}/{{ item.1.name }}_win.ovpn"
+    dest: /etc/openvpn/client/{{ item.1.name }}/{{ item.1.name }}_win.ovpn
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+- name: delete local temporary directory
+  ansible.builtin.file:
+    path: "{{ tempdir.path }}"
+    state: absent
+  when: tempdir.path is defined
+  delegate_to: '127.0.0.1'
+  changed_when: false
+
+# 'o+r' to allow read by user 'nobody'
+# name of file in 'ccd' must be the same as cert from task 'build client full'
+- name: configure network
+  ansible.builtin.template:
+    src: "ccd.j2"
+    dest: "/etc/openvpn/server/ccd/{{ item.1.name }}"
+    owner: nobody
+    group: nobody
+  loop: "{{ openvpn_groups|subelements('devices') }}"
+
+#- name: create local directory for certificates and configs (optional)
+#  ansible.builtin.file:
+#    path: /tmp/openvpn
+#    state: directory
+#  delegate_to: '127.0.0.1'
+#  become: no
+#
+#- name: download certificates and configs to local directory (optional)
+#  ansible.posix.synchronize:
+#    mode: pull
+#    src: /etc/openvpn/client/
+#    dest: /tmp/openvpn/
+#  changed_when: false

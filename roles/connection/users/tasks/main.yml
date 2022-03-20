@@ -1,0 +1,14 @@
+---
+- name: add user
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    comment: "{{ item.comment }}"
+    groups: wheel
+    append: yes
+  loop: "{{ users }}"
+
+- name: set authorized key
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ lookup('file', '{{ playbook_dir }}/id_rsa.pub') }}"
+  loop: "{{ users }}"

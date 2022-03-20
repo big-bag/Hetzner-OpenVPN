@@ -1,0 +1,6 @@
+---
+- name: include tasks to configure server side parametes
+  ansible.builtin.import_tasks: server.yml
+
+- name: include tasks to configure client side parametes
+  ansible.builtin.import_tasks: client.yml
