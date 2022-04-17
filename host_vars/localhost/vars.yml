@@ -47,3 +47,7 @@ openvpn_groups:
         password: "{{ vault_password_client_04 }}"
         ip_server: 192.168.20.13
         ip_client: 192.168.20.14
+      - name: client_05
+        password: "{{ vault_password_client_05 }}"
+        ip_server: 192.168.20.17
+        ip_client: 192.168.20.18
