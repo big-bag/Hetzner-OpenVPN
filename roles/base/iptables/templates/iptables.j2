@@ -69,6 +69,11 @@
 -A FORWARD -i {{ tun_interface_client }} -o {{ ansible_facts['default_ipv4']['interface'] }} -s {{ network_client }}/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT -m comment --comment "Allow forward between OpenVPN client's tun interface and server's physical interface"
 -A FORWARD -i {{ ansible_facts['default_ipv4']['interface'] }} -o {{ tun_interface_client }}                            -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT -m comment --comment "Allow forward between OpenVPN client's tun interface and server's physical interface"
 
+# ------------------- Minima rules ------------------- #
+
+-A OUTPUT -p tcp -o {{ ansible_facts['default_ipv4']['interface'] }} --dport 9001 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT -m comment --comment "Allow Minima blockchain to initiate P2P connections"
+-A INPUT  -p tcp -i {{ ansible_facts['default_ipv4']['interface'] }} --sport 9001 -m conntrack --ctstate ESTABLISHED     -j ACCEPT -m comment --comment "Allow Minima blockchain to initiate P2P connections"
+
 # ------------------- Basic rules ------------------- #
 
 # Log Blocked Traffic
