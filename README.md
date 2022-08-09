@@ -57,6 +57,8 @@ docker run --rm -ti \
 
 8. Write e-mail address for Let's Encrypt to variable `vault_letsencrypt_email`
 
+9. Add `vault_password_router_*` and `vault_password_client_*` passwords to  for user accounts in OpenVPN
+
 To edit encrypted file use command
 ```fish
 docker run --rm -ti \
